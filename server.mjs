@@ -127,12 +127,34 @@ app.get("/o/:lead_id.png", async (req, res) => {
   res.status(200).send(PIXEL_GIF);
 });
 
+app.get("/conv", async (req, res) => {
+  const lead_id = String(req.query.lid || "");
+  const campaign = String(req.query.c || "");
+  const industry = pickIndustryFromCampaign(campaign);
+  const ua = req.get("user-agent") || "";
+  const ip = req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() || req.socket.remoteAddress || "";
+  const ev = {
+    type: "conv",
+    lead_id,
+    campaign,
+    industry,
+    ts: nowIso(),
+    user_agent: ua,
+    ip_hash: ipHash(ip),
+  };
+
+  try { await appendEvent(ev); } catch {}
+
+  res.status(204).end();
+});
+
 // Simple stats page
 app.get("/stats", async (_req, res) => {
   const events = await readEvents();
 
   const clicks = events.filter((e) => e.type === "click");
   const opens = events.filter((e) => e.type === "open");
+  const conversions = events.filter((e) => e.type === "conv");
 
   function summarize(list) {
     const totalsByCampaign = {};
@@ -156,6 +178,7 @@ app.get("/stats", async (_req, res) => {
 
   const clickRows = summarize(clicks);
   const openRows = summarize(opens);
+  const conversionRows = summarize(conversions);
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(`
@@ -184,6 +207,12 @@ app.get("/stats", async (_req, res) => {
         <table>
           <tr><th>Campaign</th><th>Total</th><th>Unique Leads</th></tr>
           ${openRows.map(r => `<tr><td>${r.campaign}</td><td>${r.total}</td><td>${r.unique}</td></tr>`).join("")}
+        </table>
+
+        <h2>Conversions</h2>
+        <table>
+          <tr><th>Campaign</th><th>Total</th><th>Unique Leads</th></tr>
+          ${conversionRows.map(r => `<tr><td>${r.campaign}</td><td>${r.total}</td><td>${r.unique}</td></tr>`).join("")}
         </table>
       </body>
     </html>
